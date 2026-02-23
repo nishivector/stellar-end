@@ -153,6 +153,7 @@
     
     .hidden { display: none !important; }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/dist/Tone.js"></script>
 </head>
 <body>
   <div id="start-screen">
@@ -185,7 +186,6 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/dist/Tone.js"></script>
   <script type="importmap">
   {
     "imports": {
@@ -215,18 +215,22 @@
     let synth, polySynth;
     
     async function initAudio() {
-      await Tone.start();
-      synth = new Tone.Synth({
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.5, decay: 0.8, sustain: 0.3, release: 2 }
-      }).toDestination();
-      synth.volume.value = -12;
-      
-      polySynth = new Tone.PolySynth(Tone.MembraneSynth, {
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 }
-      }).toDestination();
-      polySynth.volume.value = -18;
+      try {
+        await Tone.start();
+        synth = new Tone.Synth({
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.5, decay: 0.8, sustain: 0.3, release: 2 }
+        }).toDestination();
+        synth.volume.value = -12;
+        
+        polySynth = new Tone.PolySynth(Tone.MembraneSynth, {
+          oscillator: { type: 'sine' },
+          envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 }
+        }).toDestination();
+        polySynth.volume.value = -18;
+      } catch(e) {
+        console.warn('Audio unavailable:', e);
+      }
     }
     
     function playNote(freq, duration = '8n') {
