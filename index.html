@@ -21,6 +21,7 @@
       left: 0;
       width: 100%;
       height: 100%;
+      touch-action: none;
     }
     
     #ui {
@@ -649,24 +650,6 @@
       dragStartPos = null;
     }
     
-    // Touch support
-    function onTouchStart(event) {
-      event.preventDefault();
-      const touch = event.touches[0];
-      onMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
-    }
-    
-    function onTouchMove(event) {
-      event.preventDefault();
-      const touch = event.touches[0];
-      onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
-    }
-    
-    function onTouchEnd(event) {
-      event.preventDefault();
-      onMouseUp({ clientX: event.changedTouches[0].clientX, clientY: event.changedTouches[0].clientY });
-    }
-    
     // UI Updates
     function updateUI() {
       const energyPercent = (state.energy / state.maxEnergy) * 100;
@@ -704,12 +687,10 @@
     });
     
     // Event listeners
-    renderer.domElement.addEventListener('mousedown', onMouseDown);
-    renderer.domElement.addEventListener('mousemove', onMouseMove);
-    renderer.domElement.addEventListener('mouseup', onMouseUp);
-    renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
-    renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
-    renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
+    renderer.domElement.addEventListener('pointerdown', onMouseDown);
+    renderer.domElement.addEventListener('pointermove', onMouseMove);
+    renderer.domElement.addEventListener('pointerup', onMouseUp);
+    renderer.domElement.addEventListener('pointercancel', onMouseUp);
     
     // Window resize
     window.addEventListener('resize', () => {
