@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stellar End</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400&display=swap');
+    
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      overflow: hidden;
+      background: #020108;
+      font-family: 'Cormorant Garamond', serif;
+    }
+    
+    #canvas-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    #ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+    
+    .hud {
+      position: absolute;
+      color: #ffd4a3;
+      text-shadow: 0 0 20px rgba(255, 180, 100, 0.6);
+    }
+    
+    #energy-bar {
+      top: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+    }
+    
+    #energy-bar .label {
+      font-size: 14px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      opacity: 0.8;
+    }
+    
+    #energy-bar .bar-container {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 180, 100, 0.15);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    
+    #energy-bar .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff6b35, #ffb347, #ffd700);
+      box-shadow: 0 0 15px rgba(255, 180, 100, 0.8);
+      transition: width 0.3s ease;
+    }
+    
+    #score {
+      top: 30px;
+      right: 40px;
+      font-size: 18px;
+      letter-spacing: 2px;
+    }
+    
+    #score span {
+      font-size: 32px;
+      font-weight: 300;
+      display: block;
+      margin-top: 4px;
+    }
+    
+    #message {
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      opacity: 0;
+      transition: opacity 1s ease;
+    }
+    
+    #message.visible {
+      opacity: 1;
+    }
+    
+    #message h1 {
+      font-size: 48px;
+      font-weight: 300;
+      letter-spacing: 8px;
+      margin-bottom: 20px;
+    }
+    
+    #message p {
+      font-size: 18px;
+      letter-spacing: 3px;
+      opacity: 0.7;
+    }
+    
+    #instructions {
+      bottom: 40px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 14px;
+      letter-spacing: 2px;
+      opacity: 0.5;
+      text-align: center;
+    }
+    
+    #start-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at center, #0a0510 0%, #020108 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+    
+    #start-screen h1 {
+      font-size: 64px;
+      font-weight: 300;
+      color: #ffd4a3;
+      letter-spacing: 16px;
+      text-shadow: 0 0 60px rgba(255, 150, 50, 0.5);
+      margin-bottom: 30px;
+    }
+    
+    #start-screen p {
+      font-size: 16px;
+      color: #ffd4a3;
+      opacity: 0.6;
+      letter-spacing: 4px;
+    }
+    
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="start-screen">
+    <h1>STELLAR END</h1>
+    <p>CLICK TO BEGIN</p>
+  </div>
+  
+  <div id="canvas-container"></div>
+  
+  <div id="ui">
+    <div id="energy-bar" class="hud">
+      <div class="label">Life Force</div>
+      <div class="bar-container">
+        <div class="bar-fill" id="energy-fill"></div>
+      </div>
+    </div>
+    
+    <div id="score" class="hud">
+      SAVED
+      <span id="saved-count">0</span>
+    </div>
+    
+    <div id="message" class="hud">
+      <h1 id="message-title"></h1>
+      <p id="message-subtitle"></p>
+    </div>
+    
+    <div id="instructions" class="hud">
+      DRAG FROM STAR TO PLANETS TO TRANSFER ENERGY
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/dist/Tone.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.183.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.183.0/examples/jsm/"
+    }
+  }
+  </script>
+  
+  <script type="module">
+    import * as THREE from 'three';
+    
+    // Game State
+    const state = {
+      energy: 100,
+      maxEnergy: 100,
+      savedPlanets: 0,
+      planets: [],
+      threads: [],
+      gameOver: false,
+      gameWon: false,
+      isDragging: false,
+      dragLine: null
+    };
+    
+    // Audio
+    let synth, polySynth;
+    
+    async function initAudio() {
+      await Tone.start();
+      synth = new Tone.Synth({
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.5, decay: 0.8, sustain: 0.3, release: 2 }
+      }).toDestination();
+      synth.volume.value = -12;
+      
+      polySynth = new Tone.PolySynth(Tone.MembraneSynth, {
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.02, decay: 0.3, sustain: 0.1, release: 0.5 }
+      }).toDestination();
+      polySynth.volume.value = -18;
+    }
+    
+    function playNote(freq, duration = '8n') {
+      if (synth) {
+        synth.triggerAttackRelease(freq, duration);
+      }
+    }
+    
+    function playChord(notes, duration = '4n') {
+      if (polySynth) {
+        polySynth.triggerAttackRelease(notes, duration);
+      }
+    }
+    
+    // Scene Setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 50;
+    
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+    
+    // Background Stars
+    const starsGeometry = new THREE.BufferGeometry();
+    const starCount = 2000;
+    const positions = new Float32Array(starCount * 3);
+    const sizes = new Float32Array(starCount);
+    
+    for (let i = 0; i < starCount; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 200;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 200;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 100 - 50;
+      sizes[i] = Math.random() * 2 + 0.5;
+    }
+    
+    starsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    starsGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+    
+    const starsMaterial = new THREE.PointsMaterial({
+      color: 0x8899aa,
+      size: 0.15,
+      transparent: true,
+      opacity: 0.6,
+      sizeAttenuation: true
+    });
+    
+    const stars = new THREE.Points(starsGeometry, starsMaterial);
+    scene.add(stars);
+    
+    // The Dying Star
+    const starGroup = new THREE.Group();
+    
+    const starCore = new THREE.Mesh(
+      new THREE.SphereGeometry(3, 32, 32),
+      new THREE.MeshBasicMaterial({ color: 0xff6b35 })
+    );
+    starGroup.add(starCore);
+    
+    const starGlow = new THREE.Mesh(
+      new THREE.SphereGeometry(4, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0xff9500,
+        transparent: true,
+        opacity: 0.3
+      })
+    );
+    starGroup.add(starGlow);
+    
+    const starOuterGlow = new THREE.Mesh(
+      new THREE.SphereGeometry(6, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd700,
+        transparent: true,
+        opacity: 0.1
+      })
+    );
+    starGroup.add(starOuterGlow);
+    
+    scene.add(starGroup);
+    
+    // Planet Class
+    class Planet {
+      constructor(x, y, radius, color, energyNeed, dependsOn = null, name = '') {
+        this.x = x;
+        this.y = y;
+        this.radius = radius;
+        this.energyNeed = energyNeed;
+        this.dependsOn = dependsOn;
+        this.name = name;
+        this.saved = false;
+        this.receivedEnergy = 0;
+        
+        // Create planet mesh
+        this.mesh = new THREE.Group();
+        
+        const planetBody = new THREE.Mesh(
+          new THREE.SphereGeometry(radius, 24, 24),
+          new THREE.MeshStandardMaterial({
+            color: color,
+            emissive: color,
+            emissiveIntensity: 0.2,
+            roughness: 0.8,
+            metalness: 0.1
+          })
+        );
+        this.mesh.add(planetBody);
+        
+        // Planet glow
+        const glow = new THREE.Mesh(
+          new THREE.SphereGeometry(radius * 1.3, 16, 16),
+          new THREE.MeshBasicMaterial({
+            color: color,
+            transparent: true,
+            opacity: 0.15
+          })
+        );
+        this.mesh.add(glow);
+        
+        // Energy ring (shows when receiving energy)
+        this.ring = new THREE.Mesh(
+          new THREE.RingGeometry(radius * 1.5, radius * 1.7, 32),
+          new THREE.MeshBasicMaterial({
+            color: 0xffd700,
+            transparent: true,
+            opacity: 0,
+            side: THREE.DoubleSide
+          })
+        );
+        this.ring.rotation.x = Math.PI / 2;
+        this.mesh.add(this.ring);
+        
+        this.mesh.position.set(x, y, 0);
+        scene.add(this.mesh);
+        
+        // Status indicator
+        this.statusLight = new THREE.PointLight(color, 0, radius * 3);
+        this.mesh.add(this.statusLight);
+        
+        this.orbitAngle = Math.random() * Math.PI * 2;
+        this.orbitSpeed = 0.0003 + Math.random() * 0.0002;
+        this.baseX = x;
+        this.baseY = y;
+      }
+      
+      update(time) {
+        // Subtle orbit wobble
+        this.orbitAngle += this.orbitSpeed;
+        this.mesh.position.x = this.baseX + Math.sin(this.orbitAngle) * 0.5;
+        this.mesh.position.y = this.baseY + Math.cos(this.orbitAngle * 0.7) * 0.3;
+        
+        // Pulse glow when receiving energy
+        if (this.ring.material.opacity > 0) {
+          this.ring.material.opacity = 0.3 + Math.sin(time * 5) * 0.2;
+          this.statusLight.intensity = 1 + Math.sin(time * 8) * 0.5;
+        }
+      }
+      
+      canReceiveEnergy() {
+        if (this.saved) return false;
+        if (this.dependsOn === null) return true;
+        const parentPlanet = state.planets.find(p => p.name === this.dependsOn);
+        return parentPlanet && parentPlanet.saved;
+      }
+      
+      receiveEnergy(amount) {
+        this.receivedEnergy += amount;
+        if (this.receivedEnergy >= this.energyNeed && !this.saved) {
+          this.saved = true;
+          this.ring.material.opacity = 0.8;
+          state.savedPlanets++;
+          updateUI();
+          
+          // Success sound
+          playChord([261.63, 329.63, 392.00], '4n'); // C major
+          setTimeout(() => playChord([293.66, 369.99, 440.00], '4n'), 150);
+          
+          return true;
+        }
+        return false;
+      }
+      
+      getScreenPosition() {
+        const vector = new THREE.Vector3(this.mesh.position.x, this.mesh.position.y, 0);
+        vector.project(camera);
+        return {
+          x: (vector.x * 0.5 + 0.5) * window.innerWidth,
+          y: (-vector.y * 0.5 + 0.5) * window.innerHeight
+        };
+      }
+    }
+    
+    // Create Planets with dependencies
+    // Dependencies: Europa needs Ceres first, Io needs Europa, Titan needs Io
+    const planetConfigs = [
+      { x: -12, y: 8, r: 1.2, color: 0x4488cc, need: 15, name: 'Ceres' },
+      { x: 15, y: 5, r: 0.9, color: 0x88ccff, need: 12, dependsOn: 'Ceres', name: 'Europa' },
+      { x: -8, y: -10, r: 1.4, color: 0xff8866, need: 18, dependsOn: 'Europa', name: 'Io' },
+      { x: 10, y: -8, r: 1.0, color: 0xcc88ff, need: 14, dependsOn: 'Io', name: 'Titan' },
+      { x: 0, y: 15, r: 0.8, color: 0x66ffaa, need: 10, name: 'Mira' },
+      { x: -18, y: -3, r: 1.1, color: 0xffaa44, need: 16, name: 'Oberon' }
+    ];
+    
+    function createPlanets() {
+      planetConfigs.forEach(cfg => {
+        const planet = new Planet(cfg.x, cfg.y, cfg.r, cfg.color, cfg.need, cfg.dependsOn, cfg.name);
+        state.planets.push(planet);
+      });
+    }
+    
+    // Thread (energy connection)
+    class Thread {
+      constructor(startPos, endPlanet) {
+        this.startPos = startPos;
+        this.endPlanet = endPlanet;
+        this.energy = 0;
+        this.maxEnergy = endPlanet.energyNeed;
+        this.complete = false;
+        
+        const points = [
+          new THREE.Vector3(startPos.x, startPos.y, 0),
+          new THREE.Vector3(endPlanet.mesh.position.x, endPlanet.mesh.position.y, 0)
+        ];
+        
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+          color: 0xffd700,
+          transparent: true,
+          opacity: 0.8
+        });
+        
+        this.line = new THREE.Line(geometry, material);
+        scene.add(this.line);
+        
+        // Glow effect
+        const glowMaterial = new THREE.LineBasicMaterial({
+          color: 0xff9500,
+          transparent: true,
+          opacity: 0.3,
+          linewidth: 3
+        });
+        this.glowLine = new THREE.Line(geometry.clone(), glowMaterial);
+        scene.add(this.glowLine);
+      }
+      
+      update(time) {
+        if (this.complete) return;
+        
+        // Energy flow animation
+        const endPos = this.endPlanet.mesh.position;
+        this.line.geometry.setFromPoints([
+          this.startPos,
+          new THREE.Vector3(endPos.x, endPos.y, 0)
+        ]);
+        this.glowLine.geometry.setFromPoints([
+          this.startPos,
+          new THREE.Vector3(endPos.x, endPos.y, 0)
+        ]);
+        
+        // Pulse effect
+        const pulse = 0.5 + Math.sin(time * 8) * 0.3;
+        this.line.material.opacity = pulse;
+      }
+      
+      destroy() {
+        scene.remove(this.line);
+        scene.remove(this.glowLine);
+        this.line.geometry.dispose();
+        this.line.material.dispose();
+        this.glowLine.geometry.dispose();
+        this.glowLine.material.dispose();
+      }
+    }
+    
+    // Drag Line (preview)
+    function createDragLine(startPos) {
+      const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(startPos.x, startPos.y, 0),
+        new THREE.Vector3(startPos.x, startPos.y, 0)
+      ]);
+      const material = new THREE.LineBasicMaterial({
+        color: 0xff6b35,
+        transparent: true,
+        opacity: 0.5
+      });
+      state.dragLine = new THREE.Line(geometry, material);
+      scene.add(state.dragLine);
+    }
+    
+    function updateDragLine(startPos, endPos) {
+      if (state.dragLine) {
+        state.dragLine.geometry.setFromPoints([
+          new THREE.Vector3(startPos.x, startPos.y, 0),
+          new THREE.Vector3(endPos.x, endPos.y, 0)
+        ]);
+      }
+    }
+    
+    function removeDragLine() {
+      if (state.dragLine) {
+        scene.remove(state.dragLine);
+        state.dragLine.geometry.dispose();
+        state.dragLine.material.dispose();
+        state.dragLine = null;
+      }
+    }
+    
+    // Raycaster for mouse interaction
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let starPosition = new THREE.Vector3(0, 0, 0);
+    
+    function getMouseWorldPosition(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+      const target = new THREE.Vector3();
+      raycaster.ray.intersectPlane(plane, target);
+      return target;
+    }
+    
+    function isOverStar(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(starCore);
+      return intersects.length > 0;
+    }
+    
+    function getPlanetAtPosition(event) {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      
+      for (const planet of state.planets) {
+        const intersects = raycaster.intersectObject(planet.mesh.children[0]);
+        if (intersects.length > 0) {
+          return planet;
+        }
+      }
+      return null;
+    }
+    
+    // Event Handlers
+    let dragStartPos = null;
+    
+    function onMouseDown(event) {
+      if (state.gameOver || !isOverStar(event)) return;
+      
+      state.isDragging = true;
+      dragStartPos = new THREE.Vector3(0, 0, 0);
+      createDragLine(dragStartPos);
+      playNote(196.00, '16n'); // G3
+    }
+    
+    function onMouseMove(event) {
+      if (!state.isDragging || !dragStartPos) return;
+      
+      const pos = getMouseWorldPosition(event);
+      updateDragLine(dragStartPos, pos);
+    }
+    
+    function onMouseUp(event) {
+      if (!state.isDragging) return;
+      
+      removeDragLine();
+      
+      const targetPlanet = getPlanetAtPosition(event);
+      if (targetPlanet && targetPlanet.canReceiveEnergy() && state.energy >= 8) {
+        // Create energy thread
+        const thread = new Thread(new THREE.Vector3(0, 0, 0), targetPlanet);
+        state.threads.push(thread);
+        
+        // Transfer energy over time
+        const energyCost = 8;
+        state.energy -= energyCost;
+        
+        // Energy transfer animation
+        let transferred = 0;
+        const transferInterval = setInterval(() => {
+          if (state.gameOver) {
+            clearInterval(transferInterval);
+            return;
+          }
+          
+          transferred += 0.5;
+          const received = targetPlanet.receiveEnergy(0.5);
+          
+          // Sound effect during transfer
+          if (Math.floor(transferred) % 5 === 0) {
+            playNote(440 + Math.random() * 100, '32n');
+          }
+          
+          if (transferred >= targetPlanet.energyNeed || received) {
+            clearInterval(transferInterval);
+            
+            // Check win condition
+            if (state.savedPlanets >= 3) {
+              endGame(true);
+            } else if (state.energy < 8) {
+              endGame(false);
+            }
+          }
+          
+          updateUI();
+        }, 50);
+        
+        playNote(261.63, '8n'); // C4
+      } else {
+        playNote(98.00, '16n'); // G2 (error)
+      }
+      
+      state.isDragging = false;
+      dragStartPos = null;
+    }
+    
+    // Touch support
+    function onTouchStart(event) {
+      event.preventDefault();
+      const touch = event.touches[0];
+      onMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
+    }
+    
+    function onTouchMove(event) {
+      event.preventDefault();
+      const touch = event.touches[0];
+      onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+    }
+    
+    function onTouchEnd(event) {
+      event.preventDefault();
+      onMouseUp({ clientX: event.changedTouches[0].clientX, clientY: event.changedTouches[0].clientY });
+    }
+    
+    // UI Updates
+    function updateUI() {
+      const energyPercent = (state.energy / state.maxEnergy) * 100;
+      document.getElementById('energy-fill').style.width = energyPercent + '%';
+      document.getElementById('saved-count').textContent = state.savedPlanets;
+    }
+    
+    function endGame(won) {
+      state.gameOver = true;
+      state.gameWon = won;
+      
+      const title = document.getElementById('message-title');
+      const subtitle = document.getElementById('message-subtitle');
+      const messageEl = document.getElementById('message');
+      
+      if (won) {
+        title.textContent = 'STELLAR GRACE';
+        subtitle.textContent = `${state.savedPlanets} WORLDS ILLUMINED`;
+        playChord([261.63, 329.63, 392.00, 523.25], '2n'); // C major chord
+      } else {
+        title.textContent = 'STELLAR SILENCE';
+        subtitle.textContent = 'THE LIGHT FADES...';
+        playNote(98.00, '1n'); // G2
+      }
+      
+      messageEl.classList.add('visible');
+      document.getElementById('instructions').style.opacity = '0';
+    }
+    
+    // Start Game
+    document.getElementById('start-screen').addEventListener('click', async () => {
+      await initAudio();
+      document.getElementById('start-screen').classList.add('hidden');
+      playChord([196.00, 246.94, 293.66], '4n'); // G major
+    });
+    
+    // Event listeners
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
+    renderer.domElement.addEventListener('mousemove', onMouseMove);
+    renderer.domElement.addEventListener('mouseup', onMouseUp);
+    renderer.domElement.addEventListener('touchstart', onTouchStart, { passive: false });
+    renderer.domElement.addEventListener('touchmove', onTouchMove, { passive: false });
+    renderer.domElement.addEventListener('touchend', onTouchEnd, { passive: false });
+    
+    // Window resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+    
+    // Animation Loop
+    let time = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+      time += 0.016;
+      
+      // Star pulse
+      const starPulse = 1 + Math.sin(time * 2) * 0.05;
+      starCore.scale.setScalar(starPulse);
+      starGlow.scale.setScalar(starPulse * 1.3);
+      starOuterGlow.scale.setScalar(starPulse * 2);
+      
+      // Star rotation
+      starGroup.rotation.z += 0.001;
+      
+      // Star color shift (cooling)
+      const hue = 0.08 + Math.sin(time * 0.5) * 0.02;
+      starCore.material.color.setHSL(hue, 1, 0.5);
+      
+      // Update planets
+      state.planets.forEach(p => p.update(time));
+      
+      // Update threads
+      state.threads.forEach(t => t.update(time));
+      
+      // Slowly drain energy
+      if (!state.gameOver && !document.getElementById('start-screen').classList.contains('hidden')) {
+        state.energy = Math.max(0, state.energy - 0.02);
+        updateUI();
+        
+        if (state.energy <= 0 && !state.gameOver) {
+          endGame(false);
+        }
+      }
+      
+      // Background stars twinkle
+      stars.rotation.z += 0.0001;
+      
+      renderer.render(scene, camera);
+    }
+    
+    // Initialize
+    createPlanets();
+    updateUI();
+    animate();
+  </script>
+</body>
+</html>
